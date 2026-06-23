@@ -695,11 +695,41 @@ function openDetail(id) {
         <button onclick="flyToFood(${f.id});closeModalDirect();" class="primary"><i class="fa-solid fa-map-pin"></i> 在地图上查看</button>
         <button onclick="closeModalDirect()">关闭</button>
       </div>
+      <div class="modal-section" style="margin-top:16px;">
+        <h4>💬 评论</h4>
+        <div id="giscus-container"></div>
+      </div>
     </div>`;
   $("modalBackdrop").classList.add("open");
+  loadGiscus(f.name);
 }
 function closeModal(e) { if(e&&e.target!==$("modalBackdrop")) return; closeModalDirect(); }
 function closeModalDirect() { $("modalBackdrop").classList.remove("open"); }
+
+/* ========== Giscus 评论 ========== */
+function loadGiscus(term) {
+  const oldScript = document.getElementById("giscus-script");
+  if (oldScript) oldScript.remove();
+  const theme = document.documentElement.getAttribute("data-theme") || "light";
+  const script = document.createElement("script");
+  script.id = "giscus-script";
+  script.src = "https://giscus.app/client.js";
+  script.setAttribute("data-repo", "Swimm1ng-Z/xian-food-wiki");
+  script.setAttribute("data-repo-id", "R_kgDOTCh7tg");
+  script.setAttribute("data-category", "Announcements");
+  script.setAttribute("data-category-id", "DIC_kwDOTCh7ts4C_tn2");
+  script.setAttribute("data-mapping", "specific");
+  script.setAttribute("data-term", term);
+  script.setAttribute("data-reactions-enabled", "1");
+  script.setAttribute("data-emit-metadata", "0");
+  script.setAttribute("data-input-position", "bottom");
+  script.setAttribute("data-theme", theme);
+  script.setAttribute("data-lang", "zh-CN");
+  script.crossOrigin = "anonymous";
+  script.async = true;
+  const container = document.getElementById("giscus-container");
+  if (container) container.appendChild(script);
+}
 
 /* ========== Theme ========== */
 function applyTheme(theme) {
@@ -713,6 +743,13 @@ function applyTheme(theme) {
       ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'
       : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
     L.tileLayer(tileUrl, { maxZoom: 18 }).addTo(map);
+  }
+  // Update Giscus theme
+  const iframe = document.querySelector('iframe.giscus-frame');
+  if (iframe) {
+    iframe.contentWindow.postMessage({
+      giscus: { setConfig: { theme: theme === "dark" ? "dark" : "light" } }
+    }, "https://giscus.app");
   }
 }
 function toggleTheme() { applyTheme((document.documentElement.getAttribute("data-theme")||"light")==="dark"?"light":"dark"); }
