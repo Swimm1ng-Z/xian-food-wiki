@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>西安美食地图</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+:root {
+  --bg: #faf8f5;
+  --surface: #ffffff;
+  --surface-2: #f5f0e8;
+  --text: #1a1815;
+  --muted: #8c8070;
+  --border: #e0d8cc;
+  --primary: #c44536;
+  --primary-soft: #fdf0ec;
+  --success: #3a7d44;
+  --gold: #d4a017;
+  --shadow: 0 2px 12px rgba(0,0,0,0.08);
+  --radius: 10px;
+  --radius-sm: 6px;
+}
+[data-theme="dark"] {
+  --bg: #141210;
+  --surface: #1e1b17;
+  --surface-2: #28241e;
+  --text: #ece4d5;
+  --muted: #a09480;
+  --border: #3a3228;
+  --primary: #e0705c;
+  --primary-soft: #3a2018;
+  --success: #5cb868;
+  --gold: #e0b840;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "Noto Sans SC", sans-serif; background: var(--bg); color: var(--text); overflow: hidden; height: 100vh; }
+button { font: inherit; border: 0; border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text); padding: 8px 14px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; justify-content: center; transition: transform .12s, background .12s; white-space: nowrap; }
+button:hover { transform: translateY(-1px); }
+button.primary { background: var(--primary); color: white; }
+button.active { background: var(--primary); color: white; }
+a { color: var(--primary); text-decoration: none; }
+input, select { font: inherit; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 20px; padding: 7px 14px; outline: none; }
+input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+select { cursor: pointer; padding-right: 28px; }
+
+/* Map */
+#map { position: fixed; inset: 0; z-index: 1; }
+
+/* Topbar */
+.topbar {
+  position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 1000;
+  display: flex; align-items: center; gap: 8px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: blur(16px); border: 1px solid var(--border);
+  border-radius: 30px; padding: 6px 10px; box-shadow: 0 4px 24px rgba(0,0,0,0.12);
+}
+.brand { font-weight: 800; font-size: 16px; padding: 6px 10px; white-space: nowrap; background: linear-gradient(135deg, var(--primary), var(--gold)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.nav-btn { border-radius: 20px; padding: 6px 14px; font-size: 13px; }
+.nav-btn i { font-size: 14px; }
+.topbar .search-box { width: 160px; border: 1px solid var(--border); background: var(--surface-2); font-size: 13px; }
+.top-divider { width: 1px; height: 24px; background: var(--border); }
+.count-badge { font-size: 12px; color: var(--muted); padding: 4px 10px; }
+
+/* Sidebar */
+.sidebar {
+  position: fixed; top: 0; left: 0; bottom: 0; z-index: 999;
+  width: 380px; max-width: 90vw;
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  backdrop-filter: blur(20px);
+  border-right: 1px solid var(--border);
+  box-shadow: 4px 0 30px rgba(0,0,0,0.08);
+  transform: translateX(-100%);
+  transition: transform .3s cubic-bezier(.4,0,.2,1);
+  display: flex; flex-direction: column;
+}
+.sidebar.open { transform: translateX(0); }
+.sidebar-header {
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.sidebar-header h2 { margin: 0; font-size: 18px; }
+.sidebar-filters { padding: 12px 20px; border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.sidebar-filters select { width: auto; font-size: 13px; padding: 6px 24px 6px 12px; border-radius: 20px; }
+.sidebar-list { flex: 1; overflow-y: auto; padding: 12px 20px; }
+.sidebar-footer { padding: 12px 20px; border-top: 1px solid var(--border); text-align: center; }
+
+/* Food item in sidebar */
+.food-item {
+  display: flex; gap: 12px; padding: 10px; border-radius: var(--radius); cursor: pointer;
+  transition: background .15s; margin-bottom: 4px; align-items: center;
+}
+.food-item:hover { background: var(--surface-2); }
+.food-item.highlight { background: var(--primary-soft); outline: 2px solid var(--primary); }
+.food-item-emoji { font-size: 32px; min-width: 44px; text-align: center; }
+.food-item-info { flex: 1; min-width: 0; }
+.food-item-info h4 { margin: 0 0 2px; font-size: 14px; }
+.food-item-info .meta { font-size: 11px; color: var(--muted); display: flex; gap: 6px; flex-wrap: wrap; }
+.food-item-fav { font-size: 16px; padding: 4px; cursor: pointer; background: none; border: none; }
+.food-item-fav.liked { color: var(--primary); }
+
+/* Map popup */
+.leaflet-popup-content-wrapper {
+  border-radius: var(--radius) !important;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.18) !important;
+  border: 1px solid var(--border) !important;
+  background: var(--surface) !important;
+  color: var(--text) !important;
+}
+.leaflet-popup-content { margin: 14px 18px; font-family: inherit; }
+.leaflet-popup-content h3 { margin: 0 0 4px; font-size: 16px; }
+.leaflet-popup-content p { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
+.leaflet-popup-content .popup-meta { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.leaflet-popup-content .popup-meta span {
+  background: var(--surface-2); border-radius: 20px; padding: 2px 10px; font-size: 11px; color: var(--muted);
+}
+.leaflet-popup-content button { font-size: 12px; padding: 6px 12px; }
+.leaflet-popup-close-button { color: var(--muted) !important; }
+
+/* Legend */
+.map-legend {
+  position: fixed; bottom: 30px; right: 20px; z-index: 1000;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: blur(12px); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px 16px; box-shadow: var(--shadow);
+  font-size: 12px;
+}
+.map-legend h4 { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
+.map-legend .legend-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.map-legend .legend-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+
+/* Overlay */
+.overlay { position: fixed; inset: 0; z-index: 998; background: rgba(0,0,0,0.3); display: none; }
+.overlay.open { display: block; }
+
+/* Mobile */
+@media (max-width: 768px) {
+  .sidebar { width: 100vw; max-width: 100vw; }
+  .topbar { gap: 4px; padding: 4px 8px; border-radius: 24px; }
+  .topbar .brand { font-size: 13px; padding: 4px 6px; }
+  .nav-btn { padding: 4px 10px; font-size: 11px; }
+  .topbar .search-box { width: 100px; }
+  .map-legend { bottom: 16px; right: 8px; padding: 8px 12px; font-size: 10px; }
+}
+
+/* Detail Modal */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 2000;
+  background: rgba(0,0,0,0.5); display: none;
+  align-items: center; justify-content: center;
+}
+.modal-backdrop.open { display: flex; }
+.modal {
+  background: var(--surface); border-radius: var(--radius);
+  max-width: 680px; width: 95%; max-height: 85vh; overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+}
+.modal-header { position: relative; }
+.modal-header .food-img { width: 100%; height: 260px; object-fit: cover; background: var(--surface-2); display: flex; align-items: center; justify-content: center; font-size: 80px; }
+.modal-close {
+  position: absolute; top: 10px; right: 10px; width: 34px; height: 34px;
+  border-radius: 50%; background: rgba(0,0,0,0.5); color: white; border: none;
+  font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.modal-body { padding: 22px; }
+.modal-body h2 { margin: 0 0 8px; font-size: 22px; }
+.modal-body .desc { line-height: 1.8; margin: 12px 0; }
+.modal-section { margin: 14px 0; }
+.modal-section h4 { margin: 0 0 6px; color: var(--muted); font-size: 12px; text-transform: uppercase; }
+.shop-list { list-style: none; padding: 0; margin: 0; }
+.shop-list li { padding: 4px 0; border-bottom: 1px solid var(--border); }
+.shop-list li:last-child { border-bottom: none; }
+.badge { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); background: var(--surface-2); border-radius: 20px; padding: 3px 10px; font-size: 11px; }
+.badge.primary { color: var(--primary); background: var(--primary-soft); }
+.badge.gold { color: var(--gold); background: #fef9e8; }
+.shop-link { color: var(--text); text-decoration: none; transition: color .15s; }
+.shop-link:hover { color: var(--primary); text-decoration: underline; }
+.submit-section { text-align: center; padding: 20px; }
+.submit-section .field { display: grid; gap: 4px; margin-bottom: 8px; text-align: left; }
+.submit-section label { color: var(--muted); font-size: 12px; }
+.submit-section input, .submit-section select { border-radius: var(--radius-sm); width: 100%; }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div class="topbar">
+  <span class="brand">🥟 西安美食地图</span>
+  <span class="top-divider"></span>
+  <button class="nav-btn active" onclick="toggleSidebar()"><i class="fa-solid fa-list"></i> 列表</button>
+  <button class="nav-btn" onclick="setFilter('favorites')"><i class="fa-solid fa-heart"></i> 收藏</button>
+  <span class="top-divider"></span>
+  <input type="text" class="search-box" placeholder="🔍 搜索..." oninput="handleSearch(this.value)" />
+  <span class="count-badge" id="foodCount">47</span>
+  <span class="top-divider"></span>
+  <button class="nav-btn" onclick="setView('submit')"><i class="fa-solid fa-pen-to-square"></i> 投稿</button>
+  <button class="nav-btn" onclick="toggleTheme()" id="themeBtn" title="切换主题"><i class="fa-solid fa-moon"></i></button>
+</div>
+
+<div class="overlay" id="overlay" onclick="closeSidebar()"></div>
+<div class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <h2>📋 美食列表</h2>
+    <button onclick="closeSidebar()"><i class="fa-solid fa-xmark"></i></button>
+  </div>
+  <div class="sidebar-filters">
+    <select onchange="setCategory(this.value)" id="catFilter">
+      <option value="all">全部分类</option>
+    </select>
+    <select onchange="setSort(this.value)">
+      <option value="default">默认排序</option>
+      <option value="rating">⭐ 评分最高</option>
+      <option value="name">🔤 名称排序</option>
+    </select>
+  </div>
+  <div class="sidebar-list" id="sidebarList"></div>
+  <div class="sidebar-footer">
+    <button class="primary" onclick="setView('submit')" style="width:100%;"><i class="fa-solid fa-plus"></i> 投稿新美食</button>
+  </div>
+</div>
+
+<div id="submitPanel" style="display:none;position:fixed;inset:0;z-index:2000;background:var(--bg);overflow-y:auto;">
+  <div style="max-width:600px;margin:40px auto;padding:20px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+      <h2>📝 投稿西安美食</h2>
+      <button onclick="setView('map')" style="font-size:24px;background:none;">✕</button>
+    </div>
+    <p style="color:var(--muted);margin-bottom:20px;">发现了好吃的西安美食？填写以下信息，通过 GitHub Issue 投稿。</p>
+    <div class="field"><label>美食名称 *</label><input type="text" id="sName" placeholder="如：三合一扯面" /></div>
+    <div class="field"><label>分类 *</label><select id="sCategory"><option value="">请选择</option></select></div>
+    <div class="field"><label>简短描述</label><input type="text" id="sSummary" placeholder="一两句话描述这道美食..." /></div>
+    <div class="field"><label>推荐店铺</label><input type="text" id="sShops" placeholder="如：某某巷子老店、XX面馆" /></div>
+    <div class="field"><label>口味标签（逗号分隔）</label><input type="text" id="sTags" placeholder="如：酸辣, 筋道, 开胃" /></div>
+    <div class="field"><label>所在区域</label><select id="sArea"><option value="">请选择</option></select></div>
+    <button class="primary" onclick="openGitHubIssue()" style="font-size:15px;padding:10px 28px;margin-top:12px;"><i class="fa-brands fa-github"></i> 提交到 GitHub</button>
+    <p style="font-size:12px;color:var(--muted);margin-top:8px;">需要 GitHub 账号，投稿经审核后上线。</p>
+  </div>
+</div>
+
+<div class="map-legend" id="legend">
+  <h4>🗺️ 图例</h4>
+  <div id="legendItems"></div>
+</div>
+
+<div class="modal-backdrop" id="modalBackdrop" onclick="closeModal(event)">
+  <div class="modal" id="modal" onclick="event.stopPropagation()"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+/* ================================================================
+   配置区 —— 部署前请修改
+   ================================================================ */
+// GitHub 仓库（用于投稿跳转）
+// window.GITHUB_REPO_URL = "https://github.com/你的用户名/你的仓库名";
+
+/* ========== 西安美食数据库 ========== */
+const FOOD_BANK = [
+  // ── 面食 ──
+  { id:1, name:"Biangbiang面", category:"面食", tags:["筋道","香辣","蒜香"], area:"碑林区", summary:"陕西八大怪「面条像裤带」，宽如腰带的面条配油泼辣子和臊子，香味四溢。", desc:"Biangbiang面是陕西关中地区的传统风味面食，因制作过程中面条在案板上摔打发出\"biangbiang\"的声音而得名。面条宽厚有嚼劲，通常配以肉臊子、西红柿鸡蛋、炸酱、油泼辣子等多种浇头。", shops:["南院门Biangbiang面(柏树林)","老白家面馆(测绘东路)","天下第一面(大雁塔)","爱骅裤带面馆(安居巷)","大车家巷老店"], rating:5 },
+  { id:2, name:"油泼面", category:"面食", tags:["香辣","蒜香","油香"], area:"新城区", summary:"热油一浇滋啦作响，辣椒面和蒜末的香气瞬间迸发，西安人最家常也最过瘾的一碗面。", desc:"油泼面最能代表陕西面食的灵魂。煮熟的手擀面上铺满辣椒面、蒜末、葱花和花椒粉，一勺滚烫热油猛浇上去，香料味道瞬间炸开。拌匀后每一根面条都裹着红油和香料，简单粗暴却让人欲罢不能。", shops:["老白家面馆(测绘东路总店)","柳巷面(案板街吉庆巷)","马虎面馆(西七路)","尚寨嫽扎咧面馆(凤城六路)","杨家油泼面(小南门)"], rating:5 },
+  { id:3, name:"岐山臊子面", category:"面食", tags:["酸辣","开胃","鲜香"], area:"碑林区", summary:"薄筋光、煎稀汪、酸辣香——九个字概括一碗正宗岐山臊子面。", desc:"源自宝鸡岐山，臊子用猪肉丁配木耳、黄花菜、豆腐、胡萝卜等切丁炒制，汤头酸辣鲜香。面条讲究\"薄、筋、光\"，汤讲究\"煎、稀、汪\"，味讲究\"酸、辣、香\"。", shops:["永明岐山面(西五路)","民俗村又一家臊子面","乡党臊子面(连锁)","齐月岐山面(南稍门)"], rating:5 },
+  { id:4, name:"菠菜面", category:"面食", tags:["清香","筋道","健康"], area:"雁塔区", summary:"翠绿色面条用新鲜菠菜汁和面，清香爽口，配上油泼或臊子，好看又好吃。", desc:"菠菜面在面粉中加入新鲜菠菜汁揉制，面条呈翠绿色，自带清甜菜香。可做成油泼菠菜面、炸酱菠菜面或臊子菠菜面，近年来因健康属性深受年轻人喜爱。", shops:["坤坤菠菜面(夏家什字)","罗家面(红专南路)","老闫家菠菜面(草场坡)","绿叶面庄(建设路)"], rating:4 },
+  { id:5, name:"杨凌蘸水面", category:"面食", tags:["清淡","筋道","蘸汁"], area:"未央区", summary:"面和汤分开，面条蘸酸辣蒜汁吃，汤清面白，清爽不腻。", desc:"源于杨凌地区，特色是面条与蘸汁分开盛装。白水煮出的宽面单独装盆，蘸碗里是蒜泥、辣油、醋和香料调成的汁水。夏天来一碗太解暑了。", shops:["眼镜张牛肉块扯面(建国路)","杨凌蘸水面馆","晓莉卤面馆(钟楼小区)"], rating:4 },
+  { id:6, name:"户县摆汤面", category:"面食", tags:["汤鲜","面软","暖胃"], area:"未央区", summary:"「薄如纸、细如线」，面条在热汤中一涮即熟，暖胃舒坦。", desc:"户县（今鄠邑区）传统面食，面条极薄极细，在滚汤中涮摆几下就熟。汤头用骨头汤或鸡汤打底，配以葱花、香菜、紫菜，清淡鲜美。", shops:["户县摆汤面馆","德泰楼陕菜馆(北大街)","长安大排档(中贸广场)"], rating:4 },
+  { id:7, name:"腊汁肉揪面片", category:"面食", tags:["肉香","面软","浓郁"], area:"莲湖区", summary:"腊汁肉的卤香配上手工揪的厚面片，肉烂汤浓，每片面片都裹满肉汁。", desc:"手揪面片是不规则的大片厚面，浇上炖得酥烂的腊汁肉和浓稠肉汤，面片吸饱了肉汁的香味。是很多西安人早餐首选。", shops:["刘记腊汁肉揪面片(大车家巷)","大皮院腊汁肉揪面片","铁头面馆(土门)"], rating:4 },
+  
+	  { id:43, name:"荞面饸饹", category:"面食", tags:["筋道","香辣","荞麦香"], area:"灞桥区", summary:"荞麦面团用饸饹床子压入滚锅，筋道爽滑有荞麦独特香气，夏天凉拌冬天浇臊子。", desc:"饸饹是陕西最古老的面食之一，用荞麦面或荞麦与小麦混合面团，通过饸饹床子（一种带孔木制工具）压成圆条直接落入沸水锅中。可凉拌（酸辣汁配黄瓜丝）也可热吃（浇羊肉臊子汤）。荞麦面的独特香气让人一吃难忘。", shops:["南关荞面饸饹(南稍门)","教场门饸饹(莲湖路)","蓝田饸饹馆"], rating:4 },
+	  { id:44, name:"浆水鱼鱼", category:"面食", tags:["酸爽","清凉","消暑"], area:"雁塔区", summary:"玉米面糊糊漏成小鱼形状在冰凉酸浆水中游弋，酸爽消暑，西安夏天最解馋的冷食。", desc:"浆水鱼鱼是陕西夏季消暑必备。用玉米面熬成稠糊，通过漏勺漏入冷水中凝成两头尖中间圆的小鱼状。吃时捞入碗里浇上芹菜浆水（发酵酸汤），加韭菜、油泼辣子和蒜末，酸爽清凉。", shops:["老白家浆水鱼鱼(洒金桥)","回民街老刘家浆水鱼鱼","长安大排档陕菜馆(小寨)","大海子陕菜(高新)"], rating:4 },
+	  { id:45, name:"搅团", category:"面食", tags:["软糯","蒜香","农家"], area:"未央区", summary:"「搅团要好，七十二搅」。玉米面在大锅中不停搅打成软糯团子，浇上酸辣蒜汁和炒韭菜，农家最暖心的粗粮面食。", desc:"搅团是关中农家传统粗粮美食。玉米面在开水锅中边撒边搅，需不停搅动才能细腻无疙瘩（有\"搅团要好七十二搅\"之说）。盛入碗中浇上酸辣的醋蒜汁水和炒韭菜、油泼辣子，软糯香辣。还可做\"漏鱼\"——将热搅团漏入凉水成型。", shops:["李家搅团馆(纺织城)","农家搅团馆","老碗会陕菜馆(洒金桥)"], rating:4 },
+
+	  // ── 泡馍 ──
+  { id:8, name:"羊肉泡馍", category:"泡馍", tags:["汤鲜","肉烂","馍筋"], area:"莲湖区", summary:"西安美食代名词。亲手把馍掰成黄豆大小，交给师傅用羊肉浓汤煮制，千年古都的味道。", desc:"羊肉泡馍是西安最具代表性的美食。食客先自己将白吉馍掰成黄豆粒大小，由厨师用滚烫羊肉汤反复\"泖\"制，配上炖得酥烂的羊肉、粉丝、木耳和香菜，佐以糖蒜和辣酱，汤浓馍香。", shops:["果渊斋老米家泡馍(北广济街)","一真楼(大皮院)","老刘家泡馍(北广济街)","同盛祥(钟楼)","马光荣泡馍(庙后街)"], rating:5 },
+  { id:9, name:"牛肉泡馍", category:"泡馍", tags:["汤鲜","肉烂","馍筋"], area:"莲湖区", summary:"牛肉替代羊肉，汤底更加醇厚浓郁，不爱羊肉膻味的最佳选择。", desc:"制作方式与羊肉泡馍类似，将羊肉换成牛肉。牛肉煮得酥烂不散，汤底颜色更深味道更醇。很多本地人更偏爱牛肉泡馍，认为滋味更厚重。", shops:["刘兰英牛羊肉泡馍(立新街)","老刘家永盛斋(东关南街)","黄家泡馍馆(昆明路)"], rating:5 },
+  { id:10, name:"小炒泡馍", category:"泡馍", tags:["酸辣","开胃","浓郁"], area:"莲湖区", summary:"泡馍升级版！加西红柿黄花菜豆腐干与馍粒爆炒，酸辣开胃汤汁更浓。", desc:"小炒泡馍是泡馍变体，加入西红柿、木耳、黄花菜、豆腐干、粉丝等与掰好的馍粒在锅中爆炒收汁，加大量辣椒和醋，成品汤汁浓稠酸辣可口。是西安人夜宵热门选择。", shops:["马洪小炒泡馍(钟楼回民街)","刘信牛羊肉泡馍小炒(回民街)","老车家泡馍(大差市)"], rating:5 },
+  { id:11, name:"葫芦头泡馍", category:"泡馍", tags:["汤白","肠香","浓郁"], area:"碑林区", summary:"猪大肠熬制的奶白浓汤泡馍，汤色如奶肠软汤鲜，泡馍界另一传奇。", desc:"葫芦头是西安独有的泡馍品种，因猪大肠煮熟后形似葫芦而得名。猪骨猪大肠长时间熬煮出奶白色浓汤，配以大肠、粉丝、豆腐等。汤色乳白，肠嫩汤鲜，肥而不腻。自唐代药王孙思邈改良配方后流传至今。", shops:["春发生(南院门)","朱家葫芦头","德兴楼泡馍馆"], rating:5 },
+  { id:12, name:"水盆羊肉", category:"泡馍", tags:["汤清","肉鲜","清淡"], area:"碑林区", summary:"清汤羊肉配月牙饼，汤清如水而味鲜无比，冬日暖身首选。", desc:"水盆羊肉以澄城、蒲城一带最为正宗。大块带骨羊肉在清水中慢火熬煮，汤色清澈却鲜味十足。上桌时肉和汤分装，配以月牙饼和青椒蒜片。把肉夹饼里吃，或把饼掰了泡汤里，喝一口清汤浑身都暖了。", shops:["澄城水盆羊肉(翠华路)","清盛斋牛羊肉泡馍(紫郡长安)","雷记澄城水盆羊肉(振兴路)","锦弘水盆羊肉(凤城路)"], rating:5 },
+  
+	  { id:46, name:"三鲜煮馍", category:"泡馍", tags:["鲜美","清淡","料足"], area:"碑林区", summary:"骨汤煮馍配丸子、五花肉、响皮，汤白味鲜料多实在，比羊肉泡馍少一分浓烈多一分清爽。", desc:"三鲜煮馍是西安泡馍家族中的清淡派。用猪骨和鸡骨熬制的白汤煮掰好的馍块，配以炸猪肉丸子、煮五花肉片和炸猪皮（响皮），有时也加鱿鱼和腐竹。汤色奶白，鲜而不膻，是老西安人的心头好。", shops:["老韩家三鲜煮馍(大差市)","赵记三鲜煮馍(竹笆市)","马虎面馆三鲜煮馍"], rating:4 },
+
+	  // ── 夹馍/肉类 ──
+  { id:13, name:"腊汁肉夹馍", category:"夹馍/肉类", tags:["肉香","酥脆","浓郁"], area:"雁塔区", summary:"「中国汉堡包」。白吉馍外酥里软，夹上炖了一夜的腊汁肉，咬一口满嘴流油。", desc:"白吉馍用炭火烤制，外皮酥脆内里柔软；腊汁肉用老卤慢火炖制一整夜，肥而不腻瘦而不柴。将肉剁碎夹入刚出炉的热馍中，再浇一小勺卤汁，馍酥肉烂汁水四溢。", shops:["子午路张记肉夹馍(翠华路)","秦豫肉夹馍(东木头市总店)","樊记腊汁肉夹馍(竹笆市)","王魁腊汁肉夹馍(东关南街)","张记肉夹馍(建设东路)"], rating:5 },
+  { id:14, name:"腊牛肉夹馍", category:"夹馍/肉类", tags:["牛肉香","酥脆","清真"], area:"莲湖区", summary:"回民街灵魂小吃！腊牛肉色泽红亮咸香浓郁，比猪肉夹馍多一份劲道。", desc:"回民清真版肉夹馍，用腌制晾晒后的腊牛肉夹入热馍。腊牛肉咸香紧实，比猪肉更有嚼劲，配上刚出炉的白吉馍，肉香和麦香交融。回民街上几乎每家店都在卖。", shops:["杨天玉腊牛羊肉(洒金桥)","李老四腊牛肉夹馍","刘纪孝腊牛羊肉"], rating:5 },
+  { id:15, name:"粉蒸肉", category:"夹馍/肉类", tags:["软糯","肉香","米粉"], area:"莲湖区", summary:"五花肉裹上米粉蒸得软糯入味，油脂渗入米粉，每口都是绵密肉香。", desc:"西安粉蒸肉与南方不同，用牛肉或羊肉切片后裹上特制米粉和调料长时间蒸制而成。米粉吸收肉汁和油脂变得软糯，可以直接吃，也可以夹在荷叶饼里，配蒜瓣解腻。", shops:["马家粉蒸肉(回民街)","回民街老店","马建山口口香粉蒸肉"], rating:4 },
+  { id:16, name:"葫芦鸡", category:"夹馍/肉类", tags:["酥脆","鲜嫩","功夫菜"], area:"碑林区", summary:"整鸡经清蒸卤煮油炸三道工序，外皮酥脆如纸鸡肉鲜嫩多汁，宴席名菜。", desc:"葫芦鸡始于唐代，先清蒸使鸡肉定型，再用老卤水慢煮入味，最后裹糊油炸至金黄酥脆。上桌时整鸡完整如葫芦状，筷子轻轻一拨便骨肉分离，被誉为\"长安第一味\"。", shops:["醉长安(书院门)","长安大牌档(赛格)","遇见长安(盛安广场)","西安饭庄(钟楼)","竹间葫芦鸡(长安区)"], rating:5 },
+  { id:17, name:"温拌腰花", category:"夹馍/肉类", tags:["鲜嫩","微辣","功夫菜"], area:"新城区", summary:"猪腰切花刀后温拌，口感嫩如豆腐，调味精妙，陕菜名品。", desc:"猪腰去筋膜后切十字花刀，入沸水快速焯烫到恰好变色，迅速捞出以蒜泥、醋、酱油、辣椒油等调成的温拌汁拌匀。腰花嫩而不腥，花刀形状美观。做得好坏全看火候。", shops:["百姓厨房陕菜馆(高新)","秦盛轩陕菜·烧烤(大雁塔)","窄巷子陕菜馆(粉巷)"], rating:5 },
+  { id:18, name:"回民街烤肉", category:"夹馍/肉类", tags:["香辣","炭火","夜市"], area:"莲湖区", summary:"回民街炭火烤肉，羊肉串在炭火上滋滋冒油，撒上孜然辣椒，夏夜最热闹的味道。", desc:"回民街烤肉用新鲜羊肉切块穿在铁签上，在炭火架上翻烤。不断撒上孜然粉辣椒面和盐粒，油脂滴在炭火上激起阵阵香味。外焦里嫩，配冰镇冰峰，西安夜市文化灵魂。", shops:["马乐烤肉(麦苋街)","高家烤肉(大皮院)","贾三朋友烤肉(庙后街)","勇利赵家烤肉坊(连锁)","马峰烤肉(小学习巷)"], rating:4 },
+  { id:19, name:"涮牛肚", category:"夹馍/肉类", tags:["麻酱","蒜香","鲜嫩"], area:"莲湖区", summary:"牛肚切薄片在滚汤中一涮，裹上厚厚芝麻酱和蒜泥，脆嫩酱香浓郁。", desc:"新鲜牛肚切成极薄片，在滚烫骨汤中快速涮烫几秒即熟，捞出浇上芝麻酱、蒜泥、辣椒油调成的酱料。牛肚脆嫩爽口，麻酱醇厚，蒜香浓郁。常和烤肉搭配在夜市一起出现。", shops:["玲玲涮牛肚(土门)","常姐涮牛肚(土门)","马贤涮烤店(长乐坊)","长安大牌档(豆皮涮牛肚锅)","杨翔豆皮涮牛肚(连锁)"], rating:4 },
+  
+	  { id:47, name:"定家小酥肉", category:"夹馍/肉类", tags:["酥烂","麻香","回民街"], area:"莲湖区", summary:"回民街排队王！牛里脊挂糊先炸后蒸，酥烂入味麻香四溢，浇在米饭上两碗打不住。", desc:"定家小酥肉是西安回民街的传奇美食。精选牛里脊肉切片挂薄糊油炸至金黄，再放入大碗中加入花椒、八角、桂皮等调料和牛肉汤，上笼长时间蒸制。成品肉片酥烂入口即化，带浓郁花椒麻香，浇在白米饭上是最经典的吃法。", shops:["定家小酥肉(大皮院)","马家小酥肉","回民街酥肉老店"], rating:5 },
+	  { id:48, name:"梆梆肉", category:"夹馍/肉类", tags:["烟熏","咸香","下酒"], area:"碑林区", summary:"猪大肠经卤制后再用柏木锯末烟熏，外皮深红油亮烟熏味浓郁，西安人最爱的下酒硬菜。", desc:"梆梆肉是西安独有的熏制肉食，因过去小贩沿街敲木梆叫卖而得名。猪大肠彻底清洗后先入老卤锅卤制入味，再挂在熏炉中用柏木锯末和茶叶熏烤。成品色泽红亮油润，有独特烟熏香气，切成薄片直接吃或蘸蒜醋汁。和葫芦头是黄金搭档。", shops:["朱秀英梆梆肉(南院门)","周老大梆梆肉葫芦头","春发生(搭配葫芦头)"], rating:4 },
+
+	  // ── 凉皮/米皮 ──
+  { id:20, name:"秦镇米皮", category:"凉皮/米皮", tags:["酸辣","软滑","清爽"], area:"碑林区", summary:"大米磨浆蒸制的米皮，软滑白嫩，浇上红油蒜醋汁，酸辣爽滑，夏天吃太安逸。", desc:"秦镇米皮源自鄠邑区秦渡镇，用大米浸泡磨浆后蒸制而成。米皮白嫩软滑，切条后浇上辣椒油蒜泥醋调成的汁水，配焯水的豆芽菜，红白相间。入口软滑，酸辣开胃。", shops:["秦镇史玉林凉皮(团结中路)","薛昌利大米面皮(南稍门)","秦镇半济堂米皮(秦镇北街)"], rating:5 },
+  { id:21, name:"麻酱凉皮", category:"凉皮/米皮", tags:["麻酱香","醇厚","浓郁"], area:"碑林区", summary:"回民街特有，芝麻酱是灵魂。浓稠麻酱裹在每根凉皮上，香浓醇厚。", desc:"麻酱凉皮是回民街版凉皮，用面粉洗出面筋后蒸制的面皮，配上大块面筋。调味以芝麻酱为主配以蒜泥和少许辣油，口感浓稠醇厚。麻酱的香、蒜泥的辛、辣油的香完美融合。", shops:["盛志望麻酱酿皮铺(大皮院总店)","魏家凉皮(连锁)","老乌家凉皮(红埠街)","盛家凉皮(庙后街)"], rating:4 },
+  { id:22, name:"岐山擀面皮", category:"凉皮/米皮", tags:["筋道","酸辣","嚼劲"], area:"碑林区", summary:"比米皮更筋道比面皮更紧实。切得细条拌上酸辣汁和面筋，嚼劲十足。", desc:"擀面皮是宝鸡岐山的特色，面皮经过擀制和发酵，比普通面皮更加劲道有韧性。切成一指宽的条，口感紧实干香，配以面筋和酸辣调料。真空包装的擀面皮也是最常带走的西安伴手礼。", shops:["拴马桩擀面皮(菊花园)","岐山八亩沟擀面皮(连锁)","祁胖女擀面皮(建章路)","善鑫擀面皮(连锁)"], rating:5 },
+  { id:23, name:"热米皮", category:"凉皮/米皮", tags:["温热","软糯","暖胃"], area:"雁塔区", summary:"热着吃的米皮！刚蒸出来的米皮趁热切条拌料，温软滑糯，冬天吃最舒服。", desc:"米皮蒸好后不晾凉直接趁热切条，浇上热的调料汁，最后淋一勺滚烫的油泼辣子。吃起来温软滑糯，比凉皮多了一份暖意。冬天不想吃凉的？热米皮是绝佳选择。", shops:["汉中热米皮(草场坡)","邓家热米皮","热米皮大王"], rating:4 },
+  { id:24, name:"牛筋面", category:"凉皮/米皮", tags:["超筋道","Q弹","嚼劲"], area:"碑林区", summary:"像牛筋一样弹牙！拌上酸辣汁或芝麻酱，Q弹口感让人上瘾。", desc:"牛筋面在面粉中加入一定比例红薯淀粉制成，口感比普通面皮弹韧得多。可以凉拌也可以炒着吃，凉拌时配麻酱和辣椒油，炒制时常与肉丝和蔬菜同炒。", shops:["铁头凉皮(土门)","云老四凉皮(金康路)","朱选民大米面皮(西木头市)"], rating:4 },
+  // ── 小吃 ──
+  { id:25, name:"甑糕", category:"小吃", tags:["甜糯","枣香","粘软"], area:"雁塔区", summary:"糯米和红枣层层叠叠在甑锅中蒸制一夜，枣香渗透每粒米，西安最古老的甜品。", desc:"甑糕历史可追溯到三千年前西周。用糯米、红枣和芸豆在\"甑\"这种古老炊具中层层铺叠，慢火蒸制一夜。糯米已被枣汁染成琥珀色，软糯粘甜却不腻。早起在回民街吃一碟热甑糕，是西安生活最地道的打开方式。", shops:["东南亚甑糕(回民街)","胖子甑糕(洒金桥)","李穆沙甑糕(洒金桥)","老安家甑糕"], rating:5 },
+  { id:26, name:"镜糕", category:"小吃", tags:["香甜","软糯","精致"], area:"莲湖区", summary:"糯米粉在小木笼里现蒸，圆圆扁扁像小镜子，蘸上白糖芝麻花生碎。", desc:"镜糕用糯米粉在小巧的木笼屉中现蒸现卖，蒸出来的糕圆而薄形似小镜子。出笼后蘸上白糖、芝麻、花生碎和玫瑰酱等，软糯香甜。小朋友尤其喜欢这种好玩又好吃的小点心。", shops:["回民街镜糕摊","老马家镜糕","马琳镜糕"], rating:4 },
+  { id:27, name:"黄桂柿子饼", category:"小吃", tags:["甜糯","柿子香","桂香"], area:"莲湖区", summary:"临潼火晶柿子和面，包入桂花糖馅炸至金黄，外酥内软柿子天然甜味让人难忘。", desc:"用临潼特产火晶柿子果肉与面粉揉成面团，包入桂花、核桃仁和糖调成的馅料压成饼状油炸。外皮酥脆内馅软糯香甜，能吃出柿子天然果香和桂花清香。秋冬时令小吃，出了西安很难吃到。", shops:["回民街伊古斋","老徐家柿子饼","桥梓口贾永信"], rating:5 },
+  { id:28, name:"锅贴", category:"小吃", tags:["酥脆","肉香","多汁"], area:"碑林区", summary:"底部煎得金黄酥脆上面柔软筋道，咬开还有肉汁，比煎饺更过瘾。", desc:"西安锅贴个头比饺子大形似长条。平底锅中加水油混合煎制，底部金黄酥脆上面柔软，两种口感。馅料以猪肉白菜或牛肉大葱为主，咬开后肉汁四溢。", shops:["海荣锅贴(竹笆市)","小六汤包(锅贴)","老西安锅贴(大车家巷)"], rating:4 },
+  { id:29, name:"贾三灌汤包子", category:"小吃", tags:["汤汁","鲜美","清真"], area:"莲湖区", summary:"回民街招牌！皮薄如纸内藏一汪汤汁，先开窗再喝汤最后吃包子。", desc:"贾三灌汤包是回民街的明星小吃。用牛肉或羊肉做馅，包子皮极薄，蒸好后每个包子里都有一汪滚烫的汤汁。正确吃法是先咬小口\"开窗\"，轻轻吸出汤汁，再吃包子。汤汁鲜美醇厚，皮薄馅嫩。", shops:["贾三灌汤包子馆(回民街)","志亮灌汤蒸饺(庙后街)","石家包子(大皮院)","李志贤灌汤包子"], rating:5 },
+  { id:30, name:"酸菜炒米", category:"小吃", tags:["酸辣","锅气","快手"], area:"莲湖区", summary:"酸菜配米饭爆炒锅气十足，酸辣开胃。回民街深夜还在排队的神仙小吃。", desc:"酸菜炒米是回民街深夜美食。隔夜米饭大火爆炒，加入腌制酸菜和干辣椒，锅气十足。炒出来的米饭粒粒分明，酸菜的酸和辣椒的辣交织。配料还可以加鸡蛋或牛肉。", shops:["红红酸菜炒米(回民街)","燕燕酸菜炒米","尔卜餐厅"], rating:4 },
+  { id:31, name:"千层油酥饼", category:"小吃", tags:["酥脆","层多","芝麻香"], area:"碑林区", summary:"层层叠叠如千层一碰就掉渣，芝麻和油酥香气让人百米外循味而来。", desc:"千层油酥饼是西安传统点心，面团经过反复擀卷折叠形成极致分层结构。烤好后外皮金黄层层分明，一碰就簌簌掉渣。芝麻香和猪油酥融合，是配茶或早餐的绝佳选择。", shops:["德发长(钟楼)","老孙家(东大街)","回民街老安家点心铺","赵记酥饼(大差市)"], rating:4 },
+  
+	  { id:49, name:"金线油塔", category:"小吃", tags:["松软","油香","功夫"], area:"碑林区", summary:"面丝细如金线层层堆叠成塔，蒸熟后拍散拌入蒜泥调料，松软油润丝丝分明。", desc:"金线油塔是西安传统名点，唐代已有记载。面团擀薄后刷上猪油和五香粉，卷起切丝再盘成塔形，上笼蒸制。出锅后趁热拍打松散，面丝根根分明如金线。配以蒜泥、醋和辣椒油拌食，松软油润不腻。", shops:["西安饭庄","长安大牌档·长安小厨(大唐不夜城)","老孙家泡馍·金线油塔(东大街)"], rating:4 },
+	  { id:50, name:"油茶麻花", category:"小吃", tags:["咸香","暖胃","早餐"], area:"新城区", summary:"炒面冲成的咸香油茶泡着酥脆小麻花，撒上芝麻花生碎和馓子，西安人冬日早餐最暖心的选择。", desc:"油茶麻花将面粉和牛油（或菜油）、杏仁、芝麻等慢火炒至微黄出香。吃时用开水冲成糊状，放入提前炸好的小麻花泡软，再撒上炒芝麻、花生碎、杏仁和油炸馓子。口感咸香浓郁，麻花外软内酥。冬日的早晨来一碗，浑身都暖和了。", shops:["老乌家油茶麻花(红埠街)","贾德祥油茶麻花(大皮院)","教场门油茶麻花(莲湖路)","小贾油茶麻花(洒金桥)"], rating:4 },
+	  { id:51, name:"柿子糊塌", category:"小吃", tags:["甜蜜","软糯","时令"], area:"雁塔区", summary:"火晶柿子果肉和面炸成的小圆饼，外脆里糯散发着天然柿子的甜香，秋天限定美味。", desc:"柿子糊塌是临潼秋季时令小吃。用当地特产火晶柿子的果肉与面粉揉成软面团，不用加糖——柿子本身的甜度就足够了。分成小剂子压扁，入油锅炸至两面金黄。外皮薄脆内里软糯，天然果香甜而不腻。", shops:["回民街老贾家柿子糊塌(大皮院)","临潼华清池柿子饼","东南亚甑糕(也卖柿子饼)","老徐家柿子饼(回民街)"], rating:4 },
+	  { id:52, name:"炒凉粉", category:"小吃", tags:["香辣","焦香","夜市"], area:"碑林区", summary:"凉粉切成小方块在平底铁板上翻炒，加蒜苗豆酱辣椒，煎出焦脆外皮，回民街夜市必吃。", desc:"炒凉粉用豌豆或绿豆淀粉做成的凉粉切成小方块，在抹了油的平底铁板上大火翻炒。加入蒜苗、黄豆酱、辣椒面和蒜泥，不停翻动让每一面都煎出微微焦脆的外皮。成品外焦里嫩，酱香浓郁，是回民街夜市的标配小吃。", shops:["小杨烤肉(炒凉粉)","回民街老白家炒凉粉(大皮院)","大皮院马家炒凉粉"], rating:4 },
+
+	  // ── 饮品/甜品 ──
+  { id:32, name:"冰峰汽水", category:"饮品/甜品", tags:["橙味","清凉","怀旧"], area:"全城", summary:"每个西安人心中都有这瓶橙子味汽水。吃肉夹馍配冰峰，冰峰就是西安的魂。", desc:"冰峰是西安本土橙味碳酸饮料，诞生于1953年，和凉皮、肉夹馍并称「三秦套餐」。玻璃瓶装冰峰橙味浓郁气足冰爽，是西安人从小喝到大的味道。不管吃什么最后嘬一口冰峰才算完整。", shops:["冰峰体验店(钟楼)","冰峰直营店(小寨)","冰峰饮料(纺织城)","冰峰大厦(莲湖路)"], rating:5 },
+  { id:33, name:"花奶奶酸梅汤", category:"饮品/甜品", tags:["冰爽","酸甜","解腻"], area:"莲湖区", summary:"回民街排队最长的饮品！乌梅山楂桂花冰糖古法熬制，冰镇后酸甜解腻。", desc:"用乌梅、山楂、甘草、桂花和冰糖按传统配方熬煮而成，绝不使用酸梅粉勾兑。冰镇后色泽深红酸甜适口，带淡淡桂花香。吃完烤肉或麻辣小吃后来一杯瞬间解腻清爽。", shops:["花奶奶酸梅汤(回民街大皮院)","花奶奶酸梅汤(北院门店)","白家酸梅汤(大皮院)","马家酸梅汤(洒金桥)"], rating:5 },
+  { id:34, name:"醪糟", category:"饮品/甜品", tags:["甜醇","酒香","暖胃"], area:"碑林区", summary:"糯米发酵而成的甜酒酿，可冲蛋花喝也可加小汤圆煮着吃，甜中带淡淡酒香。", desc:"醪糟用糯米发酵制成甜酒酿，酒精度极低味道甜醇带淡淡米酒香。回民街最常见鸡蛋醪糟，将醪糟煮开后冲入蛋液搅成蛋花，还可加枸杞葡萄干和坚果碎。冬天喝一碗热醪糟浑身暖洋洋。", shops:["老米家醪糟(回民街)","白家醪糟","志亮灌汤蒸饺(鸡蛋醪糟)","佳宝甜食(醪糟系列)"], rating:4 },
+  { id:35, name:"八宝稀饭", category:"饮品/甜品", tags:["甜糯","丰富","养生"], area:"莲湖区", summary:"糯米粥加红枣莲子桂圆枸杞等八种配料，甜而不腻，回民街必喝甜粥。", desc:"八宝稀饭用糯米熬粥，加入红枣、莲子、花生、桂圆、枸杞、百合、葡萄干和薏仁等配料，有的还会加玫瑰酱增香。热腾腾喝一碗，料多实在甜度恰到好处。", shops:["老金家八宝稀饭(回民街)","志亮灌汤蒸饺(八宝稀饭)","东南亚甑糕"], rating:4 },
+  { id:36, name:"蜂蜜凉粽", category:"饮品/甜品", tags:["清甜","Q弹","夏日"], area:"莲湖区", summary:"冰凉的白米粽切片淋上蜂蜜和玫瑰酱，冰凉爽滑，西安夏天最惬意的甜品。", desc:"蜂蜜凉粽用纯糯米包成不加任何馅料。煮好放凉切片，淋上蜂蜜和玫瑰酱再撒芝麻。糯米凉粽冰镇后口感Q弹有嚼劲，蜂蜜甜和玫瑰香交融，清凉解暑。", shops:["回民街蜂蜜凉粽摊","佳宝甜食(大皮院)","白翔甜食店(大皮院)","老安家蜂蜜凉粽(回民街)"], rating:4 },
+  // ── 汤羹 ──
+  { id:37, name:"肉丸胡辣汤", category:"汤羹", tags:["麻辣","浓稠","暖身"], area:"莲湖区", summary:"西安人早餐之王！牛肉丸子弹牙，浓稠麻辣汤里煮着土豆胡萝卜，一碗下去整个人都清醒了。", desc:"肉丸胡辣汤是西安最具代表性早餐。汤底用牛骨熬制加花椒胡椒和大量辣椒，浓稠麻辣。汤里有弹牙牛肉丸子、土豆块、胡萝卜、西葫芦、豆角等。配腊牛肉夹馍就是西安最硬核早餐组合。", shops:["老刘家胡辣汤(大皮院)","邢老三胡辣汤(连锁)","马老四肉丸胡辣汤","李唯一肉丸胡辣汤","老常家肉丸胡辣汤(洒金桥)"], rating:5 },
+  { id:38, name:"粉汤羊血", category:"汤羹", tags:["麻辣","嫩滑","暖身"], area:"碑林区", summary:"羊血嫩滑如豆腐在麻辣浓汤中翻滚，配上粉丝豆腐，冬日驱寒神器。", desc:"粉汤羊血将新鲜羊血凝固后切成小块，口感极其嫩滑。在麻辣汤底中加入粉丝和豆腐一起煮，出锅时撒葱花和香菜。羊血没有腥膻味，吃一碗额头微微冒汗浑身都暖和了。", shops:["粉汤羊血老店(东关)","坊上人家","惠记粉汤羊血(小南门)"], rating:4 },
+  { id:39, name:"杂肝汤", category:"汤羹", tags:["鲜美","料足","暖胃"], area:"莲湖区", summary:"羊杂在清汤中煮得鲜美无比，撒上葱花胡椒粉，重口味食客的天堂。", desc:"杂肝汤用羊肝、肚、心、肺等在清汤中慢火熬煮。汤清但味浓，羊杂各具口感：肝的绵密、肚的脆韧、心的紧实。出锅撒大量葱花、香菜和胡椒粉，趁热喝鲜美暖胃。", shops:["老马家杂肝汤(大皮院)","回民街杂肝汤","老李家杂肝汤"], rating:4 },
+  { id:40, name:"生汆丸子汤", category:"汤羹", tags:["清淡","鲜美","弹牙"], area:"碑林区", summary:"现做现汆的猪肉丸子在清汤中煮得Q弹鲜美，汤清味鲜。", desc:"生汆丸子汤的丸子用新鲜猪肉剁成泥，加入姜葱水和蛋清搅打上劲，现做现汆。丸子入滚汤后迅速定型Q弹爽口。汤底是简单骨头清汤配以粉丝青菜，不油不腻丸子弹牙。", shops:["生汆丸子汤馆","小杨烤肉","勇利赵家烤肉坊"], rating:4 },
+  { id:41, name:"麻食", category:"汤羹", tags:["面疙瘩","汤浓","家常"], area:"灞桥区", summary:"小小的猫耳朵面疙瘩在浓汤中煮得软糯，配上各种蔬菜丁，西安人记忆中妈妈的味道。", desc:"麻食是陕西人从小吃到大的家常面食。小面团用拇指在案板上一搓变成小巧\"猫耳朵\"。煮熟后配上西红柿、土豆、豆腐、青菜等熬成的浓汤，酸香可口。每个西安人心中都有一碗妈妈做的麻食。", shops:["老兰家麻食(大皮院)","小馋虫麻食(连锁)","回坊麻食(北广济街)","老碗陕菜(南稍门)"], rating:4 },
+  { id:42, name:"丸子烩菜", category:"汤羹", tags:["丰富","浓汤","暖身"], area:"未央区", summary:"炸过的肉丸子和各种蔬菜在浓汤中一起煮，汤浓料足，配饭配馍都好吃。", desc:"丸子烩菜将提前炸好的肉丸子与土豆、胡萝卜、粉条、木耳、腐竹等多种食材一起放入骨汤中烩制。汤底浓郁，丸子吸饱了汤汁依然保持外皮韧劲，各种蔬菜滋味都融入汤中。", shops:["穆萨牛肉丸子烩菜(大皮院)","马家牛肉丸子烩菜(洒金桥)","老刘家牛肉丸子烩菜(庙后街)","老兰家丸子烩菜(回民街)"], rating:4 }
+];
+
+/* ========== 区域坐标（基于真实GPS验证） ========== */
+const AREA_COORDS = {
+  "碑林区": [34.256, 108.948],   // 钟楼以南，南门—南稍门
+  "莲湖区": [34.267, 108.933],   // 回民街—洒金桥核心
+  "雁塔区": [34.221, 108.950],   // 小寨—大雁塔之间
+  "新城区": [34.268, 108.962],   // 火车站—东大街东段
+  "未央区": [34.320, 108.945],   // 北郊凤城路一带
+  "灞桥区": [34.272, 109.068],   // 浐灞—纺织城
+  "全城":   [34.2611, 108.9425]     // 钟楼 — 市中心
+};
+
+// 子区域坐标（以钟楼34.2611,108.9425为原点实测推算）
+const SUB_AREAS = {
+  // ── 莲湖区：回民街核心（钟楼西北400-1200m）──
+  "回民街":     [34.2655, 108.9405],  // 北院门中段
+  "北院门":     [34.2645, 108.9410],  // 北院门南口
+  "大皮院":     [34.2645, 108.9385],  // 北院门西侧
+  "北广济街":   [34.2665, 108.9365],  // 北广济街中段
+  "洒金桥":     [34.2715, 108.9320],  // 洒金桥北段
+  "庙后街":     [34.2675, 108.9345],  // 庙后街中段
+  "红埠街":     [34.2695, 108.9340],  // 红埠街
+  "麦苋街":     [34.2670, 108.9395],  // 麦苋街
+  "小学习巷":   [34.2670, 108.9350],  // 小学习巷
+  "桥梓口":     [34.2645, 108.9310],  // 桥梓口
+  "立新街":     [34.2715, 108.9380],  // 立新街
+  "莲湖路":     [34.2725, 108.9370],  // 莲湖路
+  // 莲湖区外围
+  "土门":       [34.2640, 108.8880],  // 土门十字
+  "昆明路":     [34.2520, 108.8800],  // 昆明路西段
+  // ── 碑林区：钟楼周边南-东南（钟楼南200-2200m）──
+  "钟楼":       [34.2611, 108.9425],  // ★ 钟楼（锚点）
+  "南院门":     [34.2580, 108.9410],  // 钟楼南350m
+  "竹笆市":     [34.2590, 108.9415],  // 钟楼西南200m
+  "粉巷":       [34.2590, 108.9410],  // 竹笆市旁
+  "东木头市":   [34.2570, 108.9450],  // 钟楼东南500m
+  "安居巷":     [34.2570, 108.9455],  // 东木头市东
+  "柏树林":     [34.2555, 108.9475],  // 钟楼东南700m
+  "菊花园":     [34.2575, 108.9465],  // 柏树林西
+  "书院门":     [34.2550, 108.9445],  // 钟楼南600m
+  "大车家巷":   [34.2585, 108.9405],  // 南院门附近
+  "西木头市":   [34.2590, 108.9420],  // 钟楼南
+  "夏家什字":   [34.2615, 108.9380],  // 钟楼西200m
+  // 碑林区南部
+  "南稍门":     [34.2410, 108.9435],  // 钟楼南2.2km
+  "建设路":     [34.2490, 108.9480],  // 建筑科技大学
+  "建设东路":   [34.2495, 108.9500],  // 建设东路
+  "测绘东路":   [34.2480, 108.9290],  // 测绘路一带
+  "振兴路":     [34.2450, 108.9380],  // 振兴路
+  "小南门":     [34.2520, 108.9350],  // 小南门（勿幕门）
+  // 碑林区东部
+  "东大街":     [34.2615, 108.9520],  // 东大街中段
+  "建国路":     [34.2600, 108.9540],  // 建国路
+  "东关":       [34.2620, 108.9620],  // 东关正街
+  "东关南街":   [34.2600, 108.9600],  // 东关南街
+  // ── 新城区：钟楼东北-东（钟楼东北800-2500m）──
+  "大差市":     [34.2635, 108.9540],  // 东大街东段
+  "案板街":     [34.2625, 108.9470],  // 东大街北侧
+  "西七路":     [34.2725, 108.9505],  // 北大街东侧
+  "西五路":     [34.2695, 108.9515],  // 西五路
+  "长乐坊":     [34.2645, 108.9720],  // 长乐坊
+  "金康路":     [34.2640, 108.9750],  // 金康路
+  "北大街":     [34.2720, 108.9440],  // 北大街中段
+  // ── 雁塔区：钟楼南2.5-5km ──
+  "小寨":       [34.2210, 108.9440],  // ★ 小寨十字
+  "大雁塔":     [34.2194, 108.9595],  // ★ 大雁塔（锚点）
+  "翠华路":     [34.2250, 108.9500],  // 翠华路
+  "草场坡":     [34.2370, 108.9435],  // 草场坡
+  "红专南路":   [34.2235, 108.9460],  // 红专南路
+  "盛安广场":   [34.2430, 108.9280],  // 盛安广场
+  "紫郡长安":   [34.1950, 108.9370],  // 紫郡长安（南三环外）
+  "高新":       [34.2300, 108.8900],  // 高新区核心
+  // ── 未央区：钟楼北6-9km ──
+  "凤城路":     [34.3350, 108.9450],  // 凤城五路-凤城八路
+  "建章路":     [34.3050, 108.8580],  // 三桥建章路
+  // ── 灞桥区：钟楼东10-13km ──
+  "纺织城":     [34.2700, 109.0720],  // 纺织城
+  // ── 远郊 ──
+  "长安区":     [34.1550, 108.9450],  // 长安区中心
+  "秦镇":       [34.1200, 108.7650],  // 秦渡镇
+  "临潼":       [34.3650, 109.2050],  // 临潼华清池
+  // ── 连锁/名店（无路名时使用）──
+  "西安饭庄钟楼":[34.2600, 108.9430],  // 西安饭庄总店
+};
+
+const CATEGORY_COLORS = {
+  "面食": "#d94436",
+  "泡馍": "#e0832e",
+  "夹馍/肉类": "#c44536",
+  "凉皮/米皮": "#4a9e4e",
+  "小吃": "#e6a817",
+  "饮品/甜品": "#e070ac",
+  "汤羹": "#e6a817"
+};
+
+const CATEGORY_EMOJI = {
+  "面食":"🍜","泡馍":"🫕","夹馍/肉类":"🥙","凉皮/米皮":"🍝","小吃":"🍢","饮品/甜品":"🍹","汤羹":"🍲"
+};
+const CATEGORIES = [...new Set(FOOD_BANK.map(f=>f.category))];
+const ALL_AREAS = Object.keys(AREA_COORDS);
+const STORAGE_KEY = "xian-food-favs";
+const THEME_KEY = "xian-food-theme";
+
+function getFavorites() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY))||[]; } catch(e){ return []; } }
+function saveFavorites(favs) { localStorage.setItem(STORAGE_KEY, JSON.stringify(favs)); }
+function toggleFavorite(id) { let favs = getFavorites(); const i = favs.indexOf(id); if(i>-1) favs.splice(i,1); else favs.push(id); saveFavorites(favs); renderAll(); }
+function shopLink(name) { return `https://www.baidu.com/s?wd=${encodeURIComponent("西安 "+name+" 大众点评")}`; }
+
+/* ========== 地图 ========== */
+let map, markersLayer, highlightedMarker;
+function initMap() {
+  map = L.map('map', { center: [34.261, 108.942], zoom: 12, zoomControl: false, attributionControl: false });
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {
+    maxZoom: 18,
+  }).addTo(map);
+  L.control.attribution({ position: 'bottomleft', prefix: false }).addTo(map);
+  markersLayer = L.layerGroup().addTo(map);
+  renderMarkers();
+}
+
+function getFoodCoord(f) {
+  const base = AREA_COORDS[f.area] || AREA_COORDS["全城"];
+  const seed = f.id * 7 + f.name.charCodeAt(0);
+  const fakeRand = ((seed * 9301 + 49297) % 233280) / 233280;
+  const latOffset = (fakeRand - 0.5) * 0.025;
+  const lngOffset = (((seed * 13 + 137) % 1000) / 1000 - 0.5) * 0.025;
+  return [base[0] + latOffset, base[1] + lngOffset];
+}
+
+// 根据店铺名称关键词匹配到精确子区域坐标
+const SHOP_LOCATION_RULES = [
+  // 莲湖区核心
+  [/洒金桥/, "洒金桥"], [/大皮院/, "大皮院"], [/北广济街/, "北广济街"],
+  [/庙后街/, "庙后街"], [/红埠街/, "红埠街"], [/麦苋街/, "麦苋街"],
+  [/小学习巷/, "小学习巷"], [/北院门/, "北院门"],
+  [/土门/, "土门"], [/团结中路/, "土门"], [/团结西路/, "土门"],
+  [/立新街/, "立新街"], [/回民街/, "回民街"], [/莲湖路/, "莲湖路"],
+  [/昆明路/, "昆明路"],
+  // 碑林区核心
+  [/钟楼/, "钟楼"], [/南院门/, "南院门"], [/竹笆市/, "竹笆市"],
+  [/东木头市/, "东木头市"], [/柏树林/, "柏树林"], [/书院门/, "书院门"],
+  [/东关南街/, "东关南街"], [/东关/, "东关"],
+  [/南稍门/, "南稍门"], [/建国路/, "建国路"],
+  [/测绘东路/, "测绘东路"], [/西木头市/, "西木头市"], [/夏家什字/, "夏家什字"],
+  [/大车家巷/, "大车家巷"], [/安居巷/, "安居巷"],
+  [/建设东路/, "建设东路"], [/建设路/, "建设路"],
+  [/振兴路/, "振兴路"], [/粉巷/, "粉巷"], [/小南门/, "小南门"],
+  [/菊花园/, "菊花园"], [/北大街/, "北大街"],
+  // 新城区
+  [/大差市/, "大差市"], [/案板街/, "案板街"], [/西七路/, "西七路"],
+  [/西五路/, "西五路"], [/长乐坊/, "长乐坊"], [/金康路/, "金康路"],
+  // 雁塔区
+  [/赛格/, "小寨"], [/小寨/, "小寨"], [/大雁塔/, "大雁塔"],
+  [/翠华路/, "翠华路"], [/草场坡/, "草场坡"], [/高新/, "高新"],
+  [/红专南路/, "红专南路"], [/盛安广场/, "盛安广场"], [/紫郡长安/, "紫郡长安"],
+  // 未央区
+  [/凤城/, "凤城路"], [/建章路/, "建章路"],
+  // 灞桥区
+  [/纺织城/, "纺织城"],
+  // 长安区
+  [/长安区/, "长安区"],
+  // 更多关键词
+  [/桥梓口/, "桥梓口"], [/东大街/, "东大街"], [/秦镇/, "秦镇"],
+  [/华清池/, "临潼"], [/临潼/, "临潼"],
+  [/西安饭庄/, "西安饭庄钟楼"],
+  [/春发生/, "南院门"], [/志亮/, "庙后街"],
+  [/马虎面馆/, "西七路"], [/邢老三/, "土门"],
+  [/勇利赵家/, "翠华路"], [/小杨烤肉/, "东关"],
+  [/连锁/, "钟楼"],  // 连锁店默认放钟楼市中心
+];
+
+function resolveShopCoord(shopName, foodArea) {
+  for (const [re, area] of SHOP_LOCATION_RULES) {
+    if (re.test(shopName) && SUB_AREAS[area]) return SUB_AREAS[area];
+  }
+  return AREA_COORDS[foodArea] || AREA_COORDS["全城"];
+}
+
+function getShopCoord(food, shopIndex) {
+  const shopName = food.shops[shopIndex];
+  const base = resolveShopCoord(shopName, food.area);
+  const seed = food.id * 13 + shopIndex * 31 + shopName.charCodeAt(0);
+  const fakeRand = ((seed * 9301 + 49297) % 233280) / 233280;
+  const latOffset = (fakeRand - 0.5) * 0.004;
+  const lngOffset = (((seed * 17 + 251) % 1000) / 1000 - 0.5) * 0.004;
+  return [base[0] + latOffset, base[1] + lngOffset];
+}
+
+function createShopMarkerIcon(category, isFav) {
+  const color = CATEGORY_COLORS[category] || "#999";
+  const emoji = CATEGORY_EMOJI[category] || "🥟";
+  const size = isFav ? 30 : 26;
+  return L.divIcon({
+    className: 'food-marker',
+    html: `<div style="
+      width:${size}px;height:${size}px;background:${color};
+      border-radius:50%;display:flex;align-items:center;justify-content:center;
+      font-size:${isFav?17:14}px;box-shadow:0 2px 6px rgba(0,0,0,0.3);
+      border:2px solid white;transition:transform .15s;
+      cursor:pointer;
+    ">${emoji}</div>`,
+    iconSize: [size, size],
+    iconAnchor: [size/2, size/2],
+  });
+}
+
+function renderMarkers() {
+  markersLayer.clearLayers();
+  const foods = filteredFoods();
+  const favs = getFavorites();
+  foods.forEach(f => {
+    const isFav = favs.includes(f.id);
+    f.shops.forEach((shopName, shopIndex) => {
+      const marker = L.marker(getShopCoord(f, shopIndex), { icon: createShopMarkerIcon(f.category, isFav) })
+        .bindPopup(`
+          <div class="shop-popup">
+            <div style="font-size:15px;font-weight:700;margin-bottom:4px;">🏠 ${shopName}</div>
+            <div style="font-size:13px;color:var(--muted);margin-bottom:8px;">
+              ${CATEGORY_EMOJI[f.category]||""} ${f.name} · ${"⭐".repeat(f.rating)} · 📍${f.area}
+            </div>
+            <div style="display:flex;gap:6px;">
+              <button onclick="openDetail(${f.id})" style="font-size:12px;padding:5px 10px;">📖 美食详情</button>
+              <a href="${shopLink(shopName)}" target="_blank" rel="noopener" style="font-size:12px;padding:5px 10px;background:var(--surface-2);color:var(--text);border-radius:6px;text-decoration:none;">🔍 百度搜索</a>
+            </div>
+          </div>
+        `);
+      marker.foodId = f.id;
+      marker.shopIndex = shopIndex;
+      marker.on('click', () => highlightSidebarItem(f.id));
+      markersLayer.addLayer(marker);
+    });
+  });
+}
+
+function flyToFood(id) {
+  const f = FOOD_BANK.find(item=>item.id===id);
+  if (!f) return;
+  map.flyTo(getShopCoord(f, 0), 16, { duration: 1.5 });
+  openSidebar();
+  highlightSidebarItem(id);
+  setTimeout(() => {
+    markersLayer.eachLayer(m => {
+      if (m.foodId === id && m.shopIndex === 0) m.openPopup();
+    });
+  }, 1600);
+}
+
+/* ========== Sidebar ========== */
+let state = { view:"map", category:"all", search:"", sort:"default", filter:"" };
+
+function filteredFoods() {
+  let foods = FOOD_BANK;
+  if (state.filter==="favorites") { const favs = getFavorites(); foods = foods.filter(f=>favs.includes(f.id)); }
+  if (state.category!=="all") foods = foods.filter(f=>f.category===state.category);
+  if (state.search) { const s=state.search.toLowerCase(); foods = foods.filter(f=>f.name.includes(s)||f.summary.includes(s)||f.shops.some(sh=>sh.includes(s))||f.tags.some(t=>t.includes(s))); }
+  if (state.sort==="rating") foods=[...foods].sort((a,b)=>b.rating-a.rating);
+  if (state.sort==="name") foods=[...foods].sort((a,b)=>a.name.localeCompare(b.name,"zh"));
+  return foods;
+}
+
+function renderAll() {
+  renderSidebarList();
+  renderMarkers();
+  renderLegend();
+  renderSubmitForm();
+  $("foodCount").textContent = filteredFoods().length;
+}
+
+function renderSidebarList() {
+  const foods = filteredFoods();
+  const favs = getFavorites();
+  $("sidebarList").innerHTML = foods.length===0
+    ? `<div style="text-align:center;padding:40px;color:var(--muted);">没有找到匹配的美食 😢</div>`
+    : foods.map(f=>{
+      const isFav = favs.includes(f.id);
+      const emoji = CATEGORY_EMOJI[f.category] || "🥟";
+      return `<div class="food-item" id="food-item-${f.id}" onclick="flyToFood(${f.id})">
+        <div class="food-item-emoji">${emoji}</div>
+        <div class="food-item-info">
+          <h4>${f.name}</h4>
+          <div class="meta">
+            <span>${"⭐".repeat(f.rating)}</span>
+            <span>${f.category}</span>
+            <span>📍${f.area}</span>
+          </div>
+        </div>
+        <button class="food-item-fav ${isFav?'liked':''}" onclick="event.stopPropagation();toggleFavorite(${f.id})">${isFav?'❤️':'🤍'}</button>
+      </div>`;
+    }).join("");
+}
+
+function highlightSidebarItem(id) {
+  document.querySelectorAll('.food-item').forEach(el=>el.classList.remove('highlight'));
+  const el = document.getElementById('food-item-'+id);
+  if (el) { el.classList.add('highlight'); el.scrollIntoView({behavior:'smooth',block:'center'}); }
+}
+
+function renderLegend() {
+  $("legendItems").innerHTML = CATEGORIES.map(c=>
+    `<div class="legend-row">
+      <div class="legend-dot" style="background:${CATEGORY_COLORS[c]}"></div>
+      <span>${CATEGORY_EMOJI[c]} ${c} (${FOOD_BANK.filter(f=>f.category===c).length})</span>
+    </div>`
+  ).join("");
+}
+
+function renderSubmitForm() {
+  const sel = $("sCategory");
+  if (sel.options.length<=1) sel.innerHTML='<option value="">请选择</option>'+CATEGORIES.map(c=>`<option value="${c}">${c}</option>`).join("");
+  const selA = $("sArea");
+  if (selA.options.length<=1) selA.innerHTML='<option value="">请选择</option>'+ALL_AREAS.map(a=>`<option value="${a}">${a}</option>`).join("");
+  const catSel = $("catFilter");
+  if (catSel.options.length<=1) catSel.innerHTML='<option value="all">全部分类</option>'+CATEGORIES.map(c=>`<option value="${c}">${CATEGORY_EMOJI[c]||""} ${c}</option>`).join("");
+}
+
+// Sidebar toggle
+function openSidebar() { $("sidebar").classList.add("open"); $("overlay").classList.add("open"); }
+function closeSidebar() { $("sidebar").classList.remove("open"); $("overlay").classList.remove("open"); }
+function toggleSidebar() { $("sidebar").classList.contains("open") ? closeSidebar() : openSidebar(); }
+
+function setCategory(cat) { state.category=cat; renderAll(); }
+function setSort(val) { state.sort=val; renderAll(); }
+function setFilter(filter) {
+  state.filter = filter==="favorites" ? "favorites" : "";
+  if (filter==="favorites") openSidebar();
+  renderAll();
+}
+function handleSearch(val) { state.search=val; renderAll(); }
+
+function setView(view) {
+  state.view = view;
+  if (view==="submit") {
+    $("submitPanel").style.display = "";
+    closeSidebar();
+  } else {
+    $("submitPanel").style.display = "none";
+    renderAll();
+  }
+}
+
+/* ========== Detail Modal ========== */
+function openDetail(id) {
+  const f = FOOD_BANK.find(item=>item.id===id);
+  if (!f) return;
+  const favs = getFavorites(); const isFav = favs.includes(f.id);
+  const emoji = CATEGORY_EMOJI[f.category]||"🥟";
+  $("modal").innerHTML = `
+    <div class="modal-header">
+      <span class="food-img" style="background:hsl(${f.id*25%360},40%,88%);">${emoji}</span>
+      <button class="modal-close" onclick="closeModalDirect()">✕</button>
+    </div>
+    <div class="modal-body">
+      <h2>${f.name} <button style="font-size:22px;background:none;padding:0;" onclick="toggleFavorite(${f.id});openDetail(${f.id})">${isFav?'❤️':'🤍'}</button></h2>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0;">
+        <span class="badge primary">${f.category}</span>
+        <span class="badge gold">${"⭐".repeat(f.rating)}</span>
+        <span class="badge">📍 ${f.area}</span>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">${f.tags.map(t=>`<span class="badge">${t}</span>`).join("")}</div>
+      <div class="modal-section"><h4>📖 详细介绍</h4><p class="desc">${f.desc}</p></div>
+      <div class="modal-section">
+        <h4>🏪 推荐店铺 <span style="font-weight:400;font-size:11px;color:var(--muted);">（点击搜索大众点评）</span></h4>
+        <ul class="shop-list">${f.shops.map(s=>`<li><a href="${shopLink(s)}" target="_blank" rel="noopener" class="shop-link">🏠 ${s}</a></li>`).join("")}</ul>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:14px;">
+        <button onclick="flyToFood(${f.id});closeModalDirect();" class="primary"><i class="fa-solid fa-map-pin"></i> 在地图上查看</button>
+        <button onclick="closeModalDirect()">关闭</button>
+      </div>
+    </div>`;
+  $("modalBackdrop").classList.add("open");
+}
+function closeModal(e) { if(e&&e.target!==$("modalBackdrop")) return; closeModalDirect(); }
+function closeModalDirect() { $("modalBackdrop").classList.remove("open"); }
+
+/* ========== Theme ========== */
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  $("themeBtn").innerHTML = theme==="dark" ? '<i class="fa-solid fa-sun"></i>' : '<i class="fa-solid fa-moon"></i>';
+  localStorage.setItem(THEME_KEY, theme);
+  // Update map tiles for dark mode
+  if (map) {
+    map.eachLayer(l=>{ if(l instanceof L.TileLayer) map.removeLayer(l); });
+    const tileUrl = theme==="dark"
+      ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'
+      : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
+    L.tileLayer(tileUrl, { maxZoom: 18 }).addTo(map);
+  }
+}
+function toggleTheme() { applyTheme((document.documentElement.getAttribute("data-theme")||"light")==="dark"?"light":"dark"); }
+
+/* ========== GitHub Issue 投稿 ========== */
+function openGitHubIssue() {
+  const name=$("sName").value.trim(), category=$("sCategory").value, summary=$("sSummary").value.trim();
+  const shops=$("sShops").value.trim(), tags=$("sTags").value.trim(), area=$("sArea").value;
+  if(!name){alert("请至少填写美食名称~");return;} if(!category){alert("请选择一个分类~");return;}
+  const body=["## 🍜 美食投稿","","| 字段 | 内容 |","|------|------|",`| 名称 | ${name} |`,`| 分类 | ${category} |`,`| 描述 | ${summary||"（未填写）"} |`,`| 推荐店铺 | ${shops||"（未填写）"} |`,`| 口味标签 | ${tags||"（未填写）"} |`,`| 区域 | ${area||"（未填写）"} |`,"","---","> 此投稿由西安美食地图自动生成。审核通过后将加入美食数据库。"].join("\n");
+  const repoUrl=window.GITHUB_REPO_URL||"https://github.com/YOUR_USERNAME/xian-food-wiki";
+  window.open(`${repoUrl}/issues/new?title=${encodeURIComponent("🍜 美食投稿："+name)}&body=${encodeURIComponent(body)}&labels=food-submission`,"_blank");
+}
+
+/* ========== Init ========== */
+function $(id){return document.getElementById(id);}
+function init() {
+  applyTheme(localStorage.getItem(THEME_KEY)||"light");
+  initMap();
+  renderAll();
+  document.addEventListener("keydown", e=>{ if(e.key==="Escape") { closeModalDirect(); closeSidebar(); } });
+}
+init();
+</script>
+</body>
+</html>
