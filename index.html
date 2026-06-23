@@ -180,6 +180,18 @@ select { cursor: pointer; padding-right: 28px; }
 .submit-section .field { display: grid; gap: 4px; margin-bottom: 8px; text-align: left; }
 .submit-section label { color: var(--muted); font-size: 12px; }
 .submit-section input, .submit-section select { border-radius: var(--radius-sm); width: 100%; }
+
+/* 地址自动补全下拉 */
+.address-suggestion {
+  padding: 10px 12px; cursor: pointer; border-bottom: 1px solid var(--border);
+  font-size: 14px; transition: background 0.15s;
+}
+.address-suggestion:hover, .address-suggestion.active { background: var(--surface-2); }
+.address-suggestion .name { font-weight: 600; }
+.address-suggestion .district { font-size: 12px; color: var(--muted); margin-left: 6px; }
+
+/* 投稿迷你地图 */
+#submitMap { background: var(--surface-2); overflow: hidden; }
 </style>
 </head>
 <body>
@@ -231,7 +243,13 @@ select { cursor: pointer; padding-right: 28px; }
     <div class="field"><label>美食名称 *</label><input type="text" id="sName" placeholder="如：三合一扯面" /></div>
     <div class="field"><label>分类 *</label><select id="sCategory"><option value="">请选择</option></select></div>
     <div class="field"><label>简短描述</label><input type="text" id="sSummary" placeholder="一两句话描述这道美食..." /></div>
-    <div class="field"><label>推荐店铺</label><input type="text" id="sShops" placeholder="如：某某巷子老店、XX面馆" /></div>
+    <div class="field"><label>店铺名称</label><input type="text" id="sShopName" placeholder="如：老刘家泡馍(北广济街)" /></div>
+    <div class="field"><label>店铺地址 <span style="font-weight:400;font-size:11px;color:var(--muted);">（自动定位到地图）</span></label>
+      <input type="text" id="sAddress" placeholder="输入地址自动搜索..." autocomplete="off" />
+      <div id="addressSuggestions" style="display:none;position:absolute;z-index:10;background:var(--surface);border:1px solid var(--border);border-radius:8px;max-height:200px;overflow-y:auto;width:100%;margin-top:2px;"></div>
+    </div>
+    <input type="hidden" id="sLat" /><input type="hidden" id="sLng" />
+    <div id="submitMap" style="width:100%;height:180px;border-radius:10px;margin-bottom:14px;border:1px solid var(--border);"></div>
     <div class="field"><label>口味标签（逗号分隔）</label><input type="text" id="sTags" placeholder="如：酸辣, 筋道, 开胃" /></div>
     <div class="field"><label>所在区域</label><select id="sArea"><option value="">请选择</option></select></div>
     <button class="primary" onclick="openGitHubIssue()" style="font-size:15px;padding:10px 28px;margin-top:12px;"><i class="fa-brands fa-github"></i> 提交到 GitHub</button>
@@ -255,6 +273,10 @@ select { cursor: pointer; padding-right: 28px; }
    ================================================================ */
 // GitHub 仓库（用于投稿跳转）
 // window.GITHUB_REPO_URL = "https://github.com/你的用户名/你的仓库名";
+
+// 高德地图 Web服务 API Key（用于地址搜索和地理编码）
+// 免费获取：https://lbs.amap.com/ → 控制台 → 应用管理 → 创建应用 → Web服务
+// window.AMAP_KEY = "你的高德key";
 
 /* ========== 西安美食数据库 ========== */
 const FOOD_BANK = [
@@ -661,6 +683,8 @@ function setView(view) {
   if (view==="submit") {
     $("submitPanel").style.display = "";
     closeSidebar();
+    if (!window._submitMapReady) initSubmitMap();
+    if (window.AMAP_KEY) initAddressAutocomplete();
   } else {
     $("submitPanel").style.display = "none";
     renderAll();
@@ -705,6 +729,102 @@ function openDetail(id) {
 }
 function closeModal(e) { if(e&&e.target!==$("modalBackdrop")) return; closeModalDirect(); }
 function closeModalDirect() { $("modalBackdrop").classList.remove("open"); }
+
+/* ========== 地址搜索 & 迷你地图 ========== */
+let _suggestIdx = -1;
+
+function jsonpFetch(url, callbackName) {
+  return new Promise((resolve, reject) => {
+    const cb = callbackName || ("_cb"+Date.now()+"_"+Math.random().toString(36).slice(2));
+    const fullUrl = url + "&callback=" + cb;
+    const script = document.createElement("script");
+    script.src = fullUrl;
+    window[cb] = (data) => {
+      resolve(data);
+      delete window[cb];
+      document.head.removeChild(script);
+    };
+    script.onerror = () => {
+      reject(new Error("JSONP request failed"));
+      delete window[cb];
+      if (script.parentNode) document.head.removeChild(script);
+    };
+    document.head.appendChild(script);
+  });
+}
+
+function initSubmitMap() {
+  const el = $("submitMap"); if (!el) return;
+  el.innerHTML = "";
+  const submitMap = L.map(el, { zoomControl: false, attributionControl: false, dragging: true, scrollWheelZoom: false });
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png", { maxZoom: 18 }).addTo(submitMap);
+  submitMap.setView([34.2611, 108.9425], 13);
+  window._submitMap = submitMap;
+  window._submitMarker = null;
+  window._submitMapReady = true;
+}
+
+function amapAPI(path, params) {
+  const key = window.AMAP_KEY || "";
+  const qs = Object.entries(params).map(([k,v])=>`${k}=${encodeURIComponent(v)}`).join("&");
+  return `https://restapi.amap.com/v3${path}?key=${key}&${qs}`;
+}
+
+function initAddressAutocomplete() {
+  const input = $("sAddress"), box = $("addressSuggestions");
+  if (!input || !box) return;
+  let timer;
+  input.addEventListener("input", ()=>{
+    clearTimeout(timer);
+    const kw = input.value.trim();
+    if (!kw) { box.style.display="none"; _suggestIdx=-1; return; }
+    timer = setTimeout(()=>{
+      const url = amapAPI("/assistant/inputtips", { keywords: kw, city: "西安", output: "JSON" });
+      jsonpFetch(url, "amapTipsCb").then(data => {
+        const tips = (data && data.tips) ? data.tips : (Array.isArray(data) ? data : []);
+        if (!tips || tips.length===0) { box.style.display="none"; return; }
+        _suggestIdx = -1;
+        box.innerHTML = tips.map((t,i)=>`<div class="address-suggestion" data-i="${i}" data-name="${t.name}" data-district="${t.district||""}" data-location="${t.location||""}"><span class="name">${t.name}</span><span class="district">${t.district||""}</span></div>`).join("");
+        box.style.display = "block";
+        box.querySelectorAll(".address-suggestion").forEach(el=>{
+          el.addEventListener("click", ()=>{ selectSuggestion(el); box.style.display="none"; });
+        });
+      });
+    }, 300);
+  });
+  input.addEventListener("keydown", (e)=>{
+    const items = box.querySelectorAll(".address-suggestion");
+    if (!items.length) return;
+    if (e.key==="ArrowDown") { e.preventDefault(); _suggestIdx=Math.min(_suggestIdx+1, items.length-1); highlightSuggestion(items); }
+    else if (e.key==="ArrowUp") { e.preventDefault(); _suggestIdx=Math.max(_suggestIdx-1, -1); highlightSuggestion(items); }
+    else if (e.key==="Enter") { e.preventDefault(); if (_suggestIdx>=0 && items[_suggestIdx]) { selectSuggestion(items[_suggestIdx]); box.style.display="none"; } }
+  });
+  document.addEventListener("click", (e)=>{ if (!input.contains(e.target) && !box.contains(e.target)) box.style.display="none"; });
+}
+
+function highlightSuggestion(items) {
+  items.forEach((el,i)=>el.classList.toggle("active", i===_suggestIdx));
+}
+
+function selectSuggestion(el) {
+  const name = el.dataset.name, district = el.dataset.district, location = el.dataset.location;
+  const input = $("sAddress");
+  input.value = (district && !name.includes(district)) ? `${name}(${district})` : name;
+  if (location) {
+    const [lng, lat] = location.split(",");
+    $("sLat").value = lat; $("sLng").value = lng;
+    updateSubmitMarker(parseFloat(lat), parseFloat(lng));
+  }
+}
+
+function updateSubmitMarker(lat, lng) {
+  if (!window._submitMap) return;
+  if (window._submitMarker) window._submitMap.removeLayer(window._submitMarker);
+  window._submitMarker = L.marker([lat, lng], {
+    icon: L.divIcon({ className:"marker-icon", html:`<div style="background:#e74c3c;color:#fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.3);">📍</div>`, iconSize:[28,28], iconAnchor:[14,14] })
+  }).addTo(window._submitMap).bindPopup(`<b>投稿位置</b><br>${lat.toFixed(5)}, ${lng.toFixed(5)}`).openPopup();
+  window._submitMap.setView([lat, lng], 15);
+}
 
 /* ========== Giscus 评论 ========== */
 function loadGiscus(term) {
@@ -757,9 +877,12 @@ function toggleTheme() { applyTheme((document.documentElement.getAttribute("data
 /* ========== GitHub Issue 投稿 ========== */
 function openGitHubIssue() {
   const name=$("sName").value.trim(), category=$("sCategory").value, summary=$("sSummary").value.trim();
-  const shops=$("sShops").value.trim(), tags=$("sTags").value.trim(), area=$("sArea").value;
+  const shopName=$("sShopName").value.trim(), address=$("sAddress").value.trim();
+  const lat=$("sLat").value.trim(), lng=$("sLng").value.trim();
+  const tags=$("sTags").value.trim(), area=$("sArea").value;
   if(!name){alert("请至少填写美食名称~");return;} if(!category){alert("请选择一个分类~");return;}
-  const body=["## 🍜 美食投稿","","| 字段 | 内容 |","|------|------|",`| 名称 | ${name} |`,`| 分类 | ${category} |`,`| 描述 | ${summary||"（未填写）"} |`,`| 推荐店铺 | ${shops||"（未填写）"} |`,`| 口味标签 | ${tags||"（未填写）"} |`,`| 区域 | ${area||"（未填写）"} |`,"","---","> 此投稿由西安美食地图自动生成。审核通过后将加入美食数据库。"].join("\n");
+  const coord = (lat && lng) ? `${lat}, ${lng}` : "（未定位）";
+  const body=["## 🍜 美食投稿","","| 字段 | 内容 |","|------|------|",`| 名称 | ${name} |`,`| 分类 | ${category} |`,`| 描述 | ${summary||"（未填写）"} |`,`| 店铺名称 | ${shopName||"（未填写）"} |`,`| 店铺地址 | ${address||"（未填写）"} |`,`| 经纬度 | ${coord} |`,`| 口味标签 | ${tags||"（未填写）"} |`,`| 区域 | ${area||"（未填写）"} |`,"","---","> 此投稿由西安美食地图自动生成。审核通过后将加入美食数据库。"].join("\n");
   const repoUrl=window.GITHUB_REPO_URL||"https://github.com/Swimm1ng-Z/xian-food-wiki";
   window.open(`${repoUrl}/issues/new?title=${encodeURIComponent("🍜 美食投稿："+name)}&body=${encodeURIComponent(body)}&labels=food-submission`,"_blank");
 }
