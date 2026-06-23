@@ -723,7 +723,7 @@ function openGitHubIssue() {
   const shops=$("sShops").value.trim(), tags=$("sTags").value.trim(), area=$("sArea").value;
   if(!name){alert("请至少填写美食名称~");return;} if(!category){alert("请选择一个分类~");return;}
   const body=["## 🍜 美食投稿","","| 字段 | 内容 |","|------|------|",`| 名称 | ${name} |`,`| 分类 | ${category} |`,`| 描述 | ${summary||"（未填写）"} |`,`| 推荐店铺 | ${shops||"（未填写）"} |`,`| 口味标签 | ${tags||"（未填写）"} |`,`| 区域 | ${area||"（未填写）"} |`,"","---","> 此投稿由西安美食地图自动生成。审核通过后将加入美食数据库。"].join("\n");
-  const repoUrl=window.GITHUB_REPO_URL||"https://github.com/YOUR_USERNAME/xian-food-wiki";
+  const repoUrl=window.GITHUB_REPO_URL||"https://github.com/Swimm1ng-Z/xian-food-wiki";
   window.open(`${repoUrl}/issues/new?title=${encodeURIComponent("🍜 美食投稿："+name)}&body=${encodeURIComponent(body)}&labels=food-submission`,"_blank");
 }
 
